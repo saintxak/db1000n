@@ -288,7 +288,7 @@ func fetchConfig(configPath string) (*Config, error) {
 	return &config, nil
 }
 
-func dumpMetrics(l *logs.Logger, name string) {
+func dumpMetrics(l *logs.Logger, name, ip string) {
 	bytesPerSecond := metrics.Default.Read(name)
 	l.Info("The app is generating %v bytes per second", bytesPerSecond)
 	type metricsDump struct {
@@ -302,8 +302,8 @@ func dumpMetrics(l *logs.Logger, name string) {
 		l.Warning("failed marshaling metrics: %v", err)
 		return
 	}
-	// TODO: use proper ip
-	url := fmt.Sprintf("https://us-central1-db1000n-metrics.cloudfunctions.net/addTrafic?ip=%s", "0.0.0.0")
+
+	url := fmt.Sprintf("https://us-central1-db1000n-metrics.cloudfunctions.net/addTrafic?ip=%s", ip)
 	resp, err := http.Post(url, "application/json", bytes.NewReader(dumpBytes))
 	if err != nil {
 		l.Warning("failed sending metrics: %v", err)
@@ -319,17 +319,25 @@ func main() {
 	var configPath string
 	var refreshTimeout time.Duration
 	var logLevel logs.Level
+	var sendMetrics bool
+	var metricsIP string
 	flag.StringVar(&configPath, "c", "https://raw.githubusercontent.com/db1000n-coordinators/LoadTestConfig/main/config.json", "path to a config file, can be web endpoint")
 	flag.DurationVar(&refreshTimeout, "r", time.Minute, "refresh timeout for updating the config")
 	flag.IntVar(&logLevel, "l", logs.Info, "logging level. 0 - Debug, 1 - Info, 2 - Warning, 3 - Error. Default is Info")
+	flag.BoolVar(&sendMetrics, "m", false, "Send logs metrics to https://us-central1-db1000n-metrics.cloudfunctions.net/addTrafic")
+	flag.StringVar(&metricsIP, "ip", "0.0.0.0", "IP address for metrics logger https://us-central1-db1000n-metrics.cloudfunctions.net/addTrafic?ip={ip}")
 	flag.Parse()
 	l := logs.Logger{Level: logLevel}
-	go func() {
-		for {
-			time.Sleep(10 * time.Second)
-			dumpMetrics(&l, "traffic")
-		}
-	}()
+
+	if sendMetrics {
+		go func() {
+			for {
+				time.Sleep(10 * time.Second)
+				dumpMetrics(&l, "traffic", metricsIP)
+			}
+		}()
+	}
+
 	var cancel context.CancelFunc
 	defer func() {
 		cancel()
